@@ -116,15 +116,13 @@ func writeNewRun(data *iqair.IQAirResponse) error {
 func toTmuxString(data *iqair.IQAirResponse) string {
 	city := data.Data.City
 	aqi := data.Data.Current.Pollution.AqiUS
-	var fg, bg string
+	var bg string
+	fg := "brightwhite"
 	if aqi <= 50 {
-		fg = "yellow"
 		bg = "green"
 	} else if aqi <= 100 {
-		fg = "brightwhite"
 		bg = "red"
 	} else {
-		fg = "brightwhite"
 		bg = "purple"
 	}
 	return fmt.Sprintf("#[fg=%s,bg=%s] %s AQI: %d ", fg, bg, city, aqi)
