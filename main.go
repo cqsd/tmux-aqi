@@ -121,9 +121,13 @@ func toTmuxString(data *iqair.IQAirResponse) string {
 	if aqi <= 50 {
 		bg = "green"
 	} else if aqi <= 100 {
-		bg = "red"
+		// this and the <=150 category are not really intended to be distinguishable
+		bg = "magenta"
+	} else if aqi <= 150 {
+		fg = "black"
+		bg = "brightred"
 	} else {
-		bg = "purple"
+		bg = "black"
 	}
 	return fmt.Sprintf("#[fg=%s,bg=%s] %s AQI: %d ", fg, bg, city, aqi)
 }
