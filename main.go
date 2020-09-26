@@ -15,7 +15,7 @@ import (
 	"github.com/cqsd/tmux-aqi/pkg/iqair"
 )
 
-var configDirName string = ".iq-air"
+var configDirName string = ".tmux-aqi"
 
 // fileExists returns true if a file exists and is not a dir
 func fileExists(filename string) bool {
@@ -51,7 +51,7 @@ func getKey() (string, error) {
 	} else {
 		key, err := ioutil.ReadFile(joinConfigDir("key"))
 		if err != nil {
-			return "", fmt.Errorf("no api key found. set IQAIR_API_KEY or put it in ~/.iq-air/key")
+			return "", fmt.Errorf("no api key found. set IQAIR_API_KEY or put it in ~/%s/key", configDirName)
 		}
 		return strings.TrimSpace(string(key)), nil
 	}
@@ -113,29 +113,67 @@ func writeNewRun(data *iqair.IQAirResponse) error {
 }
 
 // format the iqair response as a tmux string with colors
-func toTmuxString(data *iqair.IQAirResponse) string {
+func toTmuxString(c *config, data *iqair.IQAirResponse) string {
 	city := data.Data.City
 	aqi := data.Data.Current.Pollution.AqiUS
-	var bg string
-	fg := "brightwhite"
+	var clr *color
 	if aqi <= 50 {
-		bg = "green"
+		clr = c.Good
 	} else if aqi <= 100 {
-		// this and the <=150 category are not really intended to be distinguishable
-		bg = "magenta"
+		clr = c.Moderate
 	} else if aqi <= 150 {
-		fg = "black"
-		bg = "brightred"
+		clr = c.Unhealthy
 	} else {
-		bg = "black"
+		clr = c.Hazardous
 	}
-	return fmt.Sprintf("#[fg=%s,bg=%s] %s AQI: %d ", fg, bg, city, aqi)
+	return fmt.Sprintf("#[fg=%s,bg=%s] %s AQI: %d ", clr.Fg, clr.Bg, city, aqi)
 }
 
-func checkOrExit(err error) {
+func checkOrExit(err error, msgs ...string) {
 	if err != nil {
+		for _, m := range msgs {
+			fmt.Println(m)
+		}
 		fmt.Println(err)
 		os.Exit(1)
+	}
+}
+
+type color struct {
+	Fg string `json:"fg"`
+	Bg string `json:"bg"`
+}
+
+func (c *color) setDefaults(fg string, bg string) {
+	if len(c.Fg) == 0 {
+		c.Fg = fg
+	}
+	if len(c.Bg) == 0 {
+		c.Bg = bg
+	}
+}
+
+type config struct {
+	Good      *color `json:"good"`
+	Moderate  *color `json:"moderate"`
+	Unhealthy *color `json:"unhealthy"`
+	Hazardous *color `json:"hazardous"`
+}
+
+func (c *config) initDefaults() {
+	c.Good.setDefaults("brightwhite", "green")
+	c.Moderate.setDefaults("brightwhite", "magenta")
+	c.Unhealthy.setDefaults("black", "brightred")
+	c.Hazardous.setDefaults("white", "black")
+}
+
+func newConfig() *config {
+	// it works, alright? this doesn't matter go away
+	return &config{
+		Good:      &color{},
+		Moderate:  &color{},
+		Unhealthy: &color{},
+		Hazardous: &color{},
 	}
 }
 
@@ -147,10 +185,20 @@ func main() {
 		checkOrExit(err)
 	}
 
+	configFile := joinConfigDir("config.json")
+	cfg := newConfig()
+	if fileExists(configFile) {
+		configRaw, err := ioutil.ReadFile(configFile)
+		checkOrExit(err, "error reading config file")
+		err = json.Unmarshal(configRaw, cfg)
+		checkOrExit(err, "error loading config file")
+	}
+	cfg.initDefaults()
+
 	data := getPreviousRun(time.Minute * 5)
 	if data != nil {
 		// have a cached result that's still fresh
-		fmt.Println(toTmuxString(data))
+		fmt.Println(toTmuxString(cfg, data))
 	} else {
 		query := url.Values{}
 		key, err := getKey()
@@ -165,14 +213,14 @@ func main() {
 		body, err := ioutil.ReadAll(res.Body)
 		checkOrExit(err)
 
-		data := iqair.IQAirResponse{}
-		err = json.Unmarshal(body, &data)
+		data := &iqair.IQAirResponse{}
+		err = json.Unmarshal(body, data)
 		checkOrExit(err)
 
-		fmt.Println(toTmuxString(&data))
+		fmt.Println(toTmuxString(cfg, data))
 
 		// cache the latest run
-		writeNewRun(&data)
+		writeNewRun(data)
 		checkOrExit(err)
 	}
 }
